@@ -5,6 +5,7 @@ from aws_cdk import (
     RemovalPolicy,
     Fn,
     CfnTag,
+    SecretValue,
     aws_iam as iam,
     aws_ec2 as ec2,
     aws_s3 as s3,
@@ -250,11 +251,11 @@ class ResourceMigrationCdkStack(Stack):
         rds.ServerlessCluster(
             self,
             'AuroraCluster',
-            engine=rds.DatabaseClusterEngine.aurora_postgres(rds.AuroraPostgresEngineVersion.VER_13_6),
+            engine=rds.DatabaseClusterEngine.aurora_postgres(version=rds.AuroraPostgresEngineVersion.VER_13_6),
             cluster_identifier='itada-aurora-cluster',
             credentials=rds.Credentials.from_password(
                 username=os.getenv('AURORACLUSTER_USERNAME'),
-                password=os.getenv('AURORACLUSTER_USERPW')
+                password=SecretValue.unsafe_plain_text(os.getenv('AURORACLUSTER_USERPW'))
             ),
             default_database_name='dev',
             security_groups=[auroracluster_sg],
@@ -262,7 +263,9 @@ class ResourceMigrationCdkStack(Stack):
             removal_policy=RemovalPolicy.DESTROY,
             subnet_group=auroracluster_subnet_group,
             vpc=itada_vpc,
-            vpc_subnets=public_subnet_selection
+            vpc_subnets=ec2.SubnetSelection(
+                subnet_type=ec2.SubnetType.PUBLIC
+            )
         )
 
 
@@ -272,9 +275,10 @@ class ResourceMigrationCdkStack(Stack):
         glue.CfnDatabase(
             self,
             'CsvUploadDatabase',
-            account_id,
-            database_input=glue.CfnDatabase.DatabaseIdentifierProperty(
-                database_name='csv_upload'
+            catalog_id=account_id,
+            database_input=glue.CfnDatabase.DatabaseInputProperty(
+                description='Database that stores upload csv data',
+                name='csv_upload'
             )
         ).apply_removal_policy(RemovalPolicy.DESTROY)
 
@@ -282,9 +286,10 @@ class ResourceMigrationCdkStack(Stack):
         glue.CfnDatabase(
             self,
             'ItadaAwsDatabase',
-            account_id,
-            database_input=glue.CfnDatabase.DatabaseIdentifierProperty(
-                database_name='itada_aws'
+            catalog_id=account_id,
+            database_input=glue.CfnDatabase.DatabaseInputProperty(
+                description='Database that stores data in the Cloud',
+                name='itada_aws'
             )
         ).apply_removal_policy(RemovalPolicy.DESTROY)
 
@@ -292,9 +297,10 @@ class ResourceMigrationCdkStack(Stack):
         glue.CfnDatabase(
             self,
             'MetadataCenterDatabase',
-            account_id,
-            database_input=glue.CfnDatabase.DatabaseIdentifierProperty(
-                database_name='metadata_center'
+            catalog_id=account_id,
+            database_input=glue.CfnDatabase.DatabaseInputProperty(
+                description='Database that stores metadata such as lineage and build history',
+                name='metadata_center'
             )
         ).apply_removal_policy(RemovalPolicy.DESTROY)
 
@@ -302,9 +308,10 @@ class ResourceMigrationCdkStack(Stack):
         glue.CfnDatabase(
             self,
             'PostgresOnpremDatabase',
-            account_id,
-            database_input=glue.CfnDatabase.DatabaseIdentifierProperty(
-                database_name='postgres_onprem'
+            catalog_id=account_id,
+            database_input=glue.CfnDatabase.DatabaseInputProperty(
+                description='Database that stores on-premise data from data source',
+                name='postgres_onprem'
             )
         ).apply_removal_policy(RemovalPolicy.DESTROY)
 
@@ -314,7 +321,7 @@ class ResourceMigrationCdkStack(Stack):
         glue.CfnConnection(
             self,
             'ItadaDposDbConnection',
-            account_id,
+            catalog_id=account_id,
             connection_input=glue.CfnConnection.ConnectionInputProperty(
                 name='itada_dpos_db_connection',
                 connection_type='JDBC',
@@ -336,7 +343,7 @@ class ResourceMigrationCdkStack(Stack):
         glue.CfnConnection(
             self,
             'DevelopWorkDbConnection',
-            account_id,
+            catalog_id=account_id,
             connection_input=glue.CfnConnection.ConnectionInputProperty(
                 name='develop-workdb-connection',
                 connection_type='JDBC',
@@ -358,7 +365,7 @@ class ResourceMigrationCdkStack(Stack):
         glue.CfnConnection(
             self,
             'DevelopRedshiftConnection',
-            account_id,
+            catalog_id=account_id,
             connection_input=glue.CfnConnection.ConnectionInputProperty(
                 name='develop-redshift-connection',
                 connection_type='JDBC',
@@ -388,6 +395,7 @@ class ResourceMigrationCdkStack(Stack):
             '--CLIENT_ID': 'ae59c4e9-0032-4122-a6ad-0f9484c71736'
         }
 
+        # itada_work_db_raw
         glue.CfnJob(
             self,
             'ItadaWorkDbRaw',
@@ -415,6 +423,7 @@ class ResourceMigrationCdkStack(Stack):
             worker_type='G.1X'
         )
 
+        # itada_work_db_clean
         glue.CfnJob(
             self,
             'ItadaWorkDbClean',
@@ -442,3 +451,85 @@ class ResourceMigrationCdkStack(Stack):
             worker_type='G.1X'
         )
 
+        # itada_work_db_transformation
+        glue.CfnJob(
+            self,
+            'ItadaWorkDbTransformation',
+            command=glue.CfnJob.JobCommandProperty(
+                name='glueetl',
+                python_version='3',
+                script_location=os.getenv('ITADAWORKDBTRANSFORMATION_JOB_SCRIPT')
+            ),
+            role=gluejob_role.role_arn,
+            default_arguments={
+                **job_shared_args,
+                '--ITADA_CLEAN_PATH': 's3://itada-datasource/work_db/clean/',
+                '--ITADA_TRANSFORMATION_PATH': 's3://itada-datasource/work_db/transformation/',
+                '--STAGE': 'transformation'
+            },
+            description='Glue Job to transform work_db cleaned data',
+            execution_property=glue.CfnJob.ExecutionPropertyProperty(
+                max_concurrent_runs=1
+            ),
+            glue_version='3.0',
+            max_retries=0,
+            name='itada_work_db_transformation',
+            number_of_workers=2,
+            worker_type='G.1X'
+        )
+
+        # itada_dpos_db_raw
+        glue.CfnJob(
+            self,
+            'ItadaDposDbRaw',
+            command=glue.CfnJob.JobCommandProperty(
+                name='glueetl',
+                python_version='3',
+                script_location=os.getenv('ITADADPOSDBRAW_JOB_SCRIPT')
+            ),
+            role=gluejob_role.role_arn,
+            default_arguments={
+                **job_shared_args,
+                '--DATASOURCE_NAME': 'postgres_onprem',
+                '--DATA_CATALOG_PREFIX': 'dpos_db_public_',
+                '--RAW_PATH': 's3://itada-datasource/dpos_db/raw',
+                '--STAGING_PATH': 's3://itada-datasource/dpos_db/staging'
+            },
+            description='Glue Job to extract dpos_db raw data',
+            execution_property=glue.CfnJob.ExecutionPropertyProperty(
+                max_concurrent_runs=1
+            ),
+            glue_version='3.0',
+            max_retries=0,
+            name='itada_dpos_db_raw',
+            number_of_workers=2,
+            worker_type='G.1X'
+        )
+
+        # itada_dpos_db_clean
+        glue.CfnJob(
+            self,
+            'ItadaDposDbClean',
+            command=glue.CfnJob.JobCommandProperty(
+                name='glueetl',
+                python_version='3',
+                script_location=os.getenv('ITADADPOSDBCLEAN_JOB_SCRIPT')
+            ),
+            role=gluejob_role.role_arn,
+            default_arguments={
+                **job_shared_args,
+                '--ITADA_CLEAN_PATH': 's3://itada-datasource/work_db/clean/',
+                '--ITADA_RAW_PATH': 's3://itada-datasource/work_db/raw/',
+                '--SELECTED_COLUMN': 'company_id',
+                '--STAGE': 'clean'
+            },
+            description='Glue Job to clean dpos_db raw data',
+            execution_property=glue.CfnJob.ExecutionPropertyProperty(
+                max_concurrent_runs=1
+            ),
+            glue_version='3.0',
+            max_retries=0,
+            name='itada_dpos_db_clean',
+            number_of_workers=2,
+            worker_type='G.1X'
+        )
