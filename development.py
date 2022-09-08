@@ -3,270 +3,42 @@ from dotenv import load_dotenv
 from aws_cdk import (
     Stack,
     RemovalPolicy,
-    Fn,
-    CfnTag,
-    SecretValue,
-    aws_iam as iam,
-    aws_ec2 as ec2,
-    aws_s3 as s3,
-    aws_redshift as redshift,
-    aws_rds as rds,
     aws_glue as glue
 )
 from constructs import Construct
+from iam.infrastructure import Iam
+from ec2.infrastructure import Ec2
+from s3.infrastructure import S3
+from redshift.infrastructure import Redshift
 
 
 load_dotenv()
 
 
-class ResourceMigrationCdkStack(Stack):
+class Itada(Stack):
 
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        account_id = Fn.ref('AWS::AccountId')
-
         # The code that defines your stack goes here
         # ====== IAM ======
-        # Managed policy
-        amazon_sqs_full_access = iam.ManagedPolicy.from_managed_policy_name(
-            self,
-            'AmazonSQSFullAccess',
-            managed_policy_name='AmazonSQSFullAccess'
-        )
-
-        amazon_s3_full_access = iam.ManagedPolicy.from_managed_policy_name(
-            self,
-            'AmazonS3FullAccess',
-            managed_policy_name='AmazonS3FullAccess'
-        )
-
-        aws_glue_service_role = iam.ManagedPolicy.from_managed_policy_name(
-            self,
-            'AWSGlueServiceRole',
-            managed_policy_name='AWSGlueServiceRole'
-        )
-
-        amazon_sns_full_access = iam.ManagedPolicy.from_managed_policy_name(
-            self,
-            'AmazonSNSFullAccess',
-            managed_policy_name='AmazonSNSFullAccess'
-        )
-
-        # Role
-        gluejob_role = iam.Role(self, "GlueJobRole",
-            assumed_by=iam.ServicePrincipal('glue.amazonaws.com'),
-            description='Allows Glue to call AWS services on your behalf.',
-            managed_policies=[
-                amazon_sqs_full_access,
-                amazon_s3_full_access,
-                aws_glue_service_role,
-                amazon_sns_full_access
-            ]
-        )
-
+        iam_config = Iam(self, 'Iam').config
 
         # ====== EC2 ======
-        # VPC
-        itada_vpc = ec2.Vpc(
-            self,
-            'ItadaVpc',
-            cidr='10.0.0.0/16',
-            max_azs=1
-        )
-        itada_vpc.apply_removal_policy(RemovalPolicy.DESTROY)
-
-        # Extract subnet information
-        pwn_subnet_selection = itada_vpc.select_subnets(
-            subnet_type=ec2.SubnetType.PRIVATE_WITH_NAT
-        )
-
-        public_subnet_selection = itada_vpc.select_subnets(
-            subnet_type=ec2.SubnetType.PUBLIC
-        )
-
-        # Security group
-        # amundsen-alb-sg
-        amundsenalb_sg = ec2.SecurityGroup(
-            self,
-            'AmundsenAlbSg',
-            vpc=itada_vpc,
-            allow_all_outbound=True,
-            description='security group for Amundsen ALB',
-            security_group_name='amundsen-alb-sg'
-        )
-        amundsenalb_sg.apply_removal_policy(RemovalPolicy.DESTROY)
-        amundsenalb_sg.add_ingress_rule(ec2.Peer.any_ipv4(), ec2.Port.tcp(80))
-        amundsenalb_sg.add_ingress_rule(ec2.Peer.any_ipv4(), ec2.Port.tcp(443))
-        amundsenalb_sg.add_ingress_rule(ec2.Peer.any_ipv6(), ec2.Port.tcp(80))
-        amundsenalb_sg.add_ingress_rule(ec2.Peer.any_ipv6(), ec2.Port.tcp(443))
-
-        # amundsen-sg
-        amundsen_sg = ec2.SecurityGroup(
-            self,
-            'AmundsenSg',
-            vpc=itada_vpc,
-            allow_all_outbound=True,
-            description='security group for Amundsen EC2',
-            security_group_name='amundsen-sg'
-        )
-        amundsen_sg.apply_removal_policy(RemovalPolicy.DESTROY)
-        amundsen_sg.add_ingress_rule(ec2.Peer.security_group_id(amundsenalb_sg.security_group_id), ec2.Port.tcp(80))
-
-        # chart-service-alb-sg
-        chartservicealb_sg = ec2.SecurityGroup(
-            self,
-            'ChartServiceAlbSg',
-            vpc=itada_vpc,
-            allow_all_outbound=True,
-            description='security group for Chart Service ALB',
-            security_group_name='chart-service-alb-sg'
-        )
-        chartservicealb_sg.apply_removal_policy(RemovalPolicy.DESTROY)
-        chartservicealb_sg.add_ingress_rule(ec2.Peer.any_ipv4(), ec2.Port.tcp(80))
-        chartservicealb_sg.add_ingress_rule(ec2.Peer.any_ipv4(), ec2.Port.tcp(443))
-        chartservicealb_sg.add_ingress_rule(ec2.Peer.any_ipv6(), ec2.Port.tcp(80))
-        chartservicealb_sg.add_ingress_rule(ec2.Peer.any_ipv6(), ec2.Port.tcp(443))
-
-        # chart-service-sg
-        chartservice_sg = ec2.SecurityGroup(
-            self,
-            'ChartServiceSg',
-            vpc=itada_vpc,
-            allow_all_outbound=True,
-            description='security group for Chart Service EC2',
-            security_group_name='chart-service-sg'
-        )
-        chartservice_sg.apply_removal_policy(RemovalPolicy.DESTROY)
-        chartservice_sg.add_ingress_rule(ec2.Peer.security_group_id(chartservicealb_sg.security_group_id), ec2.Port.tcp(8088))
-
-        # aurora-cluster-sg
-        auroracluster_sg = ec2.SecurityGroup(
-            self,
-            'AuroraClusterSg',
-            vpc=itada_vpc,
-            allow_all_outbound=True,
-            description='security group for Aurora Cluster',
-            security_group_name='aurora-cluster-sg'
-        )
-        auroracluster_sg.apply_removal_policy(RemovalPolicy.DESTROY)
-        auroracluster_sg.add_ingress_rule(ec2.Peer.security_group_id(itada_vpc.vpc_default_security_group), ec2.Port.tcp(5432))
-
-        # redshift-cluster-sg
-        redshiftcluster_sg = ec2.SecurityGroup(
-            self,
-            'RedshiftClusterSg',
-            vpc=itada_vpc,
-            allow_all_outbound=True,
-            description='security group for Redshift Cluster',
-            security_group_name='redshift-cluster-sg'
-        )
-        redshiftcluster_sg.apply_removal_policy(RemovalPolicy.DESTROY)
-        redshiftcluster_sg.add_ingress_rule(ec2.Peer.security_group_id(itada_vpc.vpc_default_security_group), ec2.Port.tcp(5439))
-        redshiftcluster_sg.add_ingress_rule(ec2.Peer.security_group_id(auroracluster_sg.security_group_id), ec2.Port.tcp(5439))
-        redshiftcluster_sg.add_ingress_rule(ec2.Peer.security_group_id(chartservice_sg.security_group_id), ec2.Port.tcp(5439))
-
-        # glue-sg
-        glue_sg = ec2.SecurityGroup(
-            self,
-            'GlueSg',
-            vpc=itada_vpc,
-            allow_all_outbound=True,
-            description='security group for Glue',
-            security_group_name='glue-sg'
-        )
-        glue_sg.apply_removal_policy(RemovalPolicy.DESTROY)
-        glue_sg.add_ingress_rule(ec2.Peer.security_group_id(glue_sg.security_group_id), ec2.Port.all_tcp())
-
+        ec2_config = Ec2(self, 'Ec2').config
 
         # ====== S3 ======
-        # itada-datasource
-        s3.Bucket(
-            self,
-            'ItadaDatasourceBucket',
-            bucket_name='itada-datasource',
-            removal_policy=RemovalPolicy.DESTROY,
-            auto_delete_objects=True
-        )
-
-        # metadata-center
-        s3.Bucket(
-            self,
-            'MetadataCenterBucket',
-            bucket_name='metadata-center',
-            removal_policy=RemovalPolicy.DESTROY,
-            auto_delete_objects=True
-        )
-
-        # itada-athena-query-result
-        s3.Bucket(
-            self,
-            'ItadaAthenaQueryResultBucket',
-            bucket_name='itada-athena-query-result',
-            removal_policy=RemovalPolicy.DESTROY,
-            auto_delete_objects=True
-        )
-
+        s3_config = S3(self, 'S3').config
 
         # ====== REDSHIFT ======
-        # Cluster subnet group
-        redshift.CfnClusterSubnetGroup(
-            self,
-            'RedshiftClusterSubnetGroup',
-            description='Group of public subnets for Redshift to deploy',
-            subnet_ids=public_subnet_selection.subnet_ids,
-            tags=[CfnTag(key='Name', value='redshift-cluster-subnet-group')]
-        ).apply_removal_policy(RemovalPolicy.DESTROY)
-
-        redshift_cluster = redshift.CfnCluster(
-            self,
-            'RedshiftCluster',
-            cluster_type='multi-node',
-            db_name='dev',
-            master_username=os.getenv('DEVELOPREDSHIFT_USERNAME'),
-            master_user_password=os.getenv('DEVELOPREDSHIFT_USERPW'),
-            node_type='dc2.large',
-            cluster_identifier='itada-redshift-cluster',
-            cluster_subnet_group_name='redshift-cluster-subnet-group',
-            number_of_nodes=1,
-            port=5439,
-            vpc_security_group_ids=[redshiftcluster_sg.security_group_id]
-        )
-        redshift_cluster.apply_removal_policy(RemovalPolicy.DESTROY)
-
+        redshift_config = Redshift(
+            self, 'Redshift',
+            subnet_ids=ec2_config['public_subnets'].subnet_ids,
+            vpc_security_group_ids=[ec2_config['redshiftcluster_sg'].security_group_id]
+        ).config
 
         # ====== AURORA ======
-        auroracluster_subnet_group = rds.SubnetGroup(
-            self,
-            'AuroraClusterSubnetGroup',
-            description='Group of public subnets for Aurora to deploy',
-            vpc=itada_vpc,
-            removal_policy=RemovalPolicy.DESTROY,
-            subnet_group_name='aurora-cluster-subnet-group',
-            vpc_subnets=ec2.SubnetSelection(
-                subnet_type=ec2.SubnetType.PUBLIC
-            )
-        )
-
-        rds.ServerlessCluster(
-            self,
-            'AuroraCluster',
-            engine=rds.DatabaseClusterEngine.aurora_postgres(version=rds.AuroraPostgresEngineVersion.VER_13_6),
-            cluster_identifier='itada-aurora-cluster',
-            credentials=rds.Credentials.from_password(
-                username=os.getenv('AURORACLUSTER_USERNAME'),
-                password=SecretValue.unsafe_plain_text(os.getenv('AURORACLUSTER_USERPW'))
-            ),
-            default_database_name='dev',
-            security_groups=[auroracluster_sg],
-            enable_data_api=True,
-            removal_policy=RemovalPolicy.DESTROY,
-            subnet_group=auroracluster_subnet_group,
-            vpc=itada_vpc,
-            vpc_subnets=ec2.SubnetSelection(
-                subnet_type=ec2.SubnetType.PUBLIC
-            )
-        )
+        
 
 
         # ====== GLUE ======
@@ -275,7 +47,7 @@ class ResourceMigrationCdkStack(Stack):
         glue.CfnDatabase(
             self,
             'CsvUploadDatabase',
-            catalog_id=account_id,
+            catalog_id=iam_config['account_id'],
             database_input=glue.CfnDatabase.DatabaseInputProperty(
                 description='Database that stores upload csv data',
                 name='csv_upload'
@@ -286,7 +58,7 @@ class ResourceMigrationCdkStack(Stack):
         glue.CfnDatabase(
             self,
             'ItadaAwsDatabase',
-            catalog_id=account_id,
+            catalog_id=iam_config['account_id'],
             database_input=glue.CfnDatabase.DatabaseInputProperty(
                 description='Database that stores data in the Cloud',
                 name='itada_aws'
@@ -297,7 +69,7 @@ class ResourceMigrationCdkStack(Stack):
         glue.CfnDatabase(
             self,
             'MetadataCenterDatabase',
-            catalog_id=account_id,
+            catalog_id=iam_config['account_id'],
             database_input=glue.CfnDatabase.DatabaseInputProperty(
                 description='Database that stores metadata such as lineage and build history',
                 name='metadata_center'
@@ -308,7 +80,7 @@ class ResourceMigrationCdkStack(Stack):
         glue.CfnDatabase(
             self,
             'PostgresOnpremDatabase',
-            catalog_id=account_id,
+            catalog_id=iam_config['account_id'],
             database_input=glue.CfnDatabase.DatabaseInputProperty(
                 description='Database that stores on-premise data from data source',
                 name='postgres_onprem'
@@ -317,11 +89,11 @@ class ResourceMigrationCdkStack(Stack):
 
         # Connection
         # itada_dpos_db_connection
-        pwn_subnet = pwn_subnet_selection.subnets[0]
+        pwn_subnet = ec2_config['pwn_subnets'].subnets[0]
         glue.CfnConnection(
             self,
             'ItadaDposDbConnection',
-            catalog_id=account_id,
+            catalog_id=iam_config['account_id'],
             connection_input=glue.CfnConnection.ConnectionInputProperty(
                 name='itada_dpos_db_connection',
                 connection_type='JDBC',
@@ -334,7 +106,7 @@ class ResourceMigrationCdkStack(Stack):
                 physical_connection_requirements=glue.CfnConnection.PhysicalConnectionRequirementsProperty(
                     availability_zone=pwn_subnet.availability_zone,
                     subnet_id=pwn_subnet.subnet_id,
-                    security_group_id_list=[glue_sg.security_group_id],
+                    security_group_id_list=[ec2_config['glue_sg'].security_group_id],
                 ),
             )
         ).apply_removal_policy(RemovalPolicy.DESTROY)
@@ -343,7 +115,7 @@ class ResourceMigrationCdkStack(Stack):
         glue.CfnConnection(
             self,
             'DevelopWorkDbConnection',
-            catalog_id=account_id,
+            catalog_id=iam_config['account_id'],
             connection_input=glue.CfnConnection.ConnectionInputProperty(
                 name='develop-workdb-connection',
                 connection_type='JDBC',
@@ -356,7 +128,7 @@ class ResourceMigrationCdkStack(Stack):
                 physical_connection_requirements=glue.CfnConnection.PhysicalConnectionRequirementsProperty(
                     availability_zone=pwn_subnet.availability_zone,
                     subnet_id=pwn_subnet.subnet_id,
-                    security_group_id_list=[glue_sg.security_group_id],
+                    security_group_id_list=[ec2_config['glue_sg'].security_group_id],
                 ),
             )
         ).apply_removal_policy(RemovalPolicy.DESTROY)
@@ -365,14 +137,14 @@ class ResourceMigrationCdkStack(Stack):
         glue.CfnConnection(
             self,
             'DevelopRedshiftConnection',
-            catalog_id=account_id,
+            catalog_id=iam_config['account_id'],
             connection_input=glue.CfnConnection.ConnectionInputProperty(
                 name='develop-redshift-connection',
                 connection_type='JDBC',
                 connection_properties={
                     'JDBC_CONNECTION_URL': (
-                        'jdbc:redshift://' + redshift_cluster.attr_endpoint_address + ':'
-                        + redshift_cluster.attr_endpoint_port + '/' + redshift_cluster.db_name
+                        'jdbc:redshift://' + redshift_config['attr_endpoint_address'] + ':'
+                        + redshift_config['attr_endpoint_port'] + '/' + redshift_config['db_name']
                     ),
                     'JDBC_ENFORCE_SSL': os.getenv('DEVELOPREDSHIFT_ENFORCE_SSL'),
                     'USERNAME': os.getenv('DEVELOPREDSHIFT_USERNAME'),
@@ -381,7 +153,7 @@ class ResourceMigrationCdkStack(Stack):
                 physical_connection_requirements=glue.CfnConnection.PhysicalConnectionRequirementsProperty(
                     availability_zone=pwn_subnet.availability_zone,
                     subnet_id=pwn_subnet.subnet_id,
-                    security_group_id_list=[glue_sg.security_group_id],
+                    security_group_id_list=[ec2_config['glue_sg'].security_group_id],
                 ),
             )
         ).apply_removal_policy(RemovalPolicy.DESTROY)
@@ -404,7 +176,7 @@ class ResourceMigrationCdkStack(Stack):
                 python_version='3',
                 script_location=os.getenv('ITADAWORKDBRAW_JOB_SCRIPT')
             ),
-            role=gluejob_role.role_arn,
+            role=iam_config['gluejob_role_arn'],
             default_arguments={
                 **job_shared_args,
                 '--DATASOURCE_NAME': 'postgres_onprem',
@@ -432,7 +204,7 @@ class ResourceMigrationCdkStack(Stack):
                 python_version='3',
                 script_location=os.getenv('ITADAWORKDBCLEAN_JOB_SCRIPT')
             ),
-            role=gluejob_role.role_arn,
+            role=iam_config['gluejob_role_arn'],
             default_arguments={
                 **job_shared_args,
                 '--ITADA_CLEAN_PATH': 's3://itada-datasource/work_db/clean/',
@@ -460,7 +232,7 @@ class ResourceMigrationCdkStack(Stack):
                 python_version='3',
                 script_location=os.getenv('ITADAWORKDBTRANSFORMATION_JOB_SCRIPT')
             ),
-            role=gluejob_role.role_arn,
+            role=iam_config['gluejob_role_arn'],
             default_arguments={
                 **job_shared_args,
                 '--ITADA_CLEAN_PATH': 's3://itada-datasource/work_db/clean/',
@@ -487,7 +259,7 @@ class ResourceMigrationCdkStack(Stack):
                 python_version='3',
                 script_location=os.getenv('ITADADPOSDBRAW_JOB_SCRIPT')
             ),
-            role=gluejob_role.role_arn,
+            role=iam_config['gluejob_role_arn'],
             default_arguments={
                 **job_shared_args,
                 '--DATASOURCE_NAME': 'postgres_onprem',
@@ -515,7 +287,7 @@ class ResourceMigrationCdkStack(Stack):
                 python_version='3',
                 script_location=os.getenv('ITADADPOSDBCLEAN_JOB_SCRIPT')
             ),
-            role=gluejob_role.role_arn,
+            role=iam_config['gluejob_role_arn'],
             default_arguments={
                 **job_shared_args,
                 '--ITADA_CLEAN_PATH': 's3://itada-datasource/work_db/clean/',

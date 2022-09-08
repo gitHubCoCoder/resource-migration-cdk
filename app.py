@@ -3,11 +3,11 @@ import os
 
 import aws_cdk as cdk
 
-from resource_migration_cdk.resource_migration_cdk_stack import ResourceMigrationCdkStack
+from development import Itada
 
 
 app = cdk.App()
-ResourceMigrationCdkStack(app, "ResourceMigrationCdkStack",
+Itada(app, "Itada",
     # If you don't specify 'env', this stack will be environment-agnostic.
     # Account/Region-dependent features and context lookups will not work,
     # but a single synthesized template can be deployed anywhere.
