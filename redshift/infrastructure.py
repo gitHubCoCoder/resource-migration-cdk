@@ -1,5 +1,5 @@
 import os
-from typing import TypedDict
+from typing import TypedDict, List
 from aws_cdk import (
     RemovalPolicy,
     CfnTag,
@@ -20,8 +20,8 @@ class Redshift(Construct):
         scope: Construct,
         id: str,
         *,
-        subnet_ids,
-        vpc_security_group_ids
+        subnet_ids: List[str],
+        vpc_security_group_ids: List[CfnTag]
     ):
         super().__init__(scope, id)
 

@@ -1,5 +1,5 @@
 import os
-from typing import TypedDict
+from typing import TypedDict, List
 from aws_cdk import (
     RemovalPolicy,
     SecretValue,
@@ -19,9 +19,8 @@ class Aurora(Construct):
         scope: Construct,
         id: str,
         *,
-        vpc,
-        security_groups,
-
+        vpc: ec2.Vpc,
+        security_groups: List[ec2.SecurityGroup]
     ):
         super().__init__(scope, id)
 
@@ -29,7 +28,7 @@ class Aurora(Construct):
             self,
             'AuroraClusterSubnetGroup',
             description='Group of public subnets for Aurora to deploy',
-            vpc=vpc, #ec2_config['itada_vpc'],
+            vpc=vpc,
             removal_policy=RemovalPolicy.DESTROY,
             subnet_group_name='aurora-cluster-subnet-group',
             vpc_subnets=ec2.SubnetSelection(
@@ -47,7 +46,7 @@ class Aurora(Construct):
                 password=SecretValue.unsafe_plain_text(os.getenv('AURORACLUSTER_USERPW'))
             ),
             default_database_name='dev',
-            security_groups= security_groups, #[ec2_config['auroracluster_sg']],
+            security_groups= security_groups,
             enable_data_api=True,
             removal_policy=RemovalPolicy.DESTROY,
             subnet_group=auroracluster_subnet_group,
