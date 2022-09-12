@@ -1,6 +1,7 @@
 from typing import TypedDict
 from aws_cdk import (
     RemovalPolicy,
+    aws_iam as iam,
     aws_ec2 as ec2
 )
 from constructs import Construct
@@ -23,7 +24,8 @@ class Ec2(Construct):
     def __init__(
         self,
         scope: Construct,
-        id: str
+        id: str,
+        ec2instance_role: iam.Role
     ):
         super().__init__(scope, id)
 
@@ -137,6 +139,91 @@ class Ec2(Construct):
         )
         glue_sg.apply_removal_policy(RemovalPolicy.DESTROY)
         glue_sg.add_ingress_rule(ec2.Peer.security_group_id(glue_sg.security_group_id), ec2.Port.all_tcp())
+
+        # Instances
+        # Bootstrapwithdocker userdata
+        user_data = ec2.UserData.for_linux()
+        user_data.add_commands(
+            'sudo apt-get update',
+            'sudo apt-get install \
+                ca-certificates \
+                curl \
+                gnupg \
+                lsb-release -y',
+            'sudo mkdir -p /etc/apt/keyrings',
+            'curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg',
+            'echo \
+            "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+            $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null',
+            'sudo apt-get update',
+            'sudo apt-get install docker-ce docker-ce-cli containerd.io docker-compose-plugin -y',
+            'sudo apt-get update',
+            'sudo apt-get install docker-compose-plugin -y'
+        )
+
+        ebs_volumes = [
+            ec2.BlockDevice(
+                device_name="/dev/sda1",
+                volume=ec2.BlockDeviceVolume.ebs(
+                    30,
+                    delete_on_termination=False,
+                    volume_type=ec2.EbsDeviceVolumeType.GP2
+                )
+            )
+        ]
+
+        instance_configs = {
+            'Amundsen': {
+                'AmundsenKey': {
+                    'key_name': 'amundsen_key'
+                },
+                'AmundsenInstance': {
+                    'machine_image': ec2.MachineImage.lookup(
+                        name='ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-20220419'
+                    )
+                }
+            },
+            'ChartService': {
+                'ChartServiceKey': {
+                    'key_name': 'chart_service_key'
+                },
+                'ChartServiceInstance': {
+                    'machine_image': ec2.MachineImage.lookup(
+                        name='ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-20220609'
+                    )
+                }
+            }
+        }
+
+        for instance_name, props in instance_configs.items():
+            key_props = props[instance_name + 'Key']
+            instance_props = props[instance_name + 'Instance']
+
+            ec2.CfnKeyPair(
+                self,
+                instance_name + 'Key',
+                key_name=key_props['key_name'],
+                key_type='rsa'
+            )
+
+            ec2.Instance(
+                self,
+                instance_name + 'Instance',
+                vpc=itada_vpc,
+                instance_type=ec2.InstanceType('r5a.large'),
+                machine_image=instance_props['machine_image'],
+                allow_all_outbound=True,
+                availability_zone=public_subnets.subnets[0].availability_zone,
+                block_devices=ebs_volumes,
+                instance_name=instance_name,
+                key_name=key_props['key_name'],
+                role=ec2instance_role,
+                security_group=amundsen_sg,
+                user_data=user_data,
+                vpc_subnets=ec2.SubnetSelection(
+                    subnet_type=ec2.SubnetType.PUBLIC
+                )
+            )
 
         # Configuration parameters
         self._config: Ec2Config = {

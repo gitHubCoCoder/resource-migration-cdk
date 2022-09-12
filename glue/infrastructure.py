@@ -288,6 +288,46 @@ class Glue(Construct):
                 number_of_workers=2,
                 worker_type='G.1X'
             ).apply_removal_policy(RemovalPolicy.DESTROY)
+        
+        # Aside jobs
+        aside_job_configs = {
+            # itada_upload_csv_to_parquet
+            'ItadaUploadCsvToParquet': {
+                'command': {
+                    'script_location': os.getenv('ITADAUPLOADCSVTOPARQUET_JOB_SCRIPT')
+                },
+                'default_arguments': {
+                    '--BUCKET_NAME': 'itada-datasource',
+                    '--CSV_PATH': 'upload/raw/csv/',
+                    '--PARQUET_PATH': 'upload/raw/parquet/',
+                    '--class': 'GlueApp'
+                },
+                'description': 'Glue Job to convert upload csv file into parquet file',
+                'name': 'itada_upload_csv_to_parquet'
+            }
+        }
+
+        for aside_job_id, aside_job_props in aside_job_configs.items():
+            glue.CfnJob(
+                self,
+                aside_job_id,
+                command=glue.CfnJob.JobCommandProperty(
+                    name='glueetl',
+                    python_version='3',
+                    script_location=aside_job_props['command']['script_location']
+                ),
+                role=gluejob_role_arn,
+                default_arguments=aside_job_props['default_arguments'],
+                description=aside_job_props['description'],
+                execution_property=glue.CfnJob.ExecutionPropertyProperty(
+                    max_concurrent_runs=1
+                ),
+                glue_version='3.0',
+                max_retries=0,
+                name=aside_job_props['name'],
+                number_of_workers=2,
+                worker_type='G.1X'
+            ).apply_removal_policy(RemovalPolicy.DESTROY)
 
         # Configuration parameters
         self._config: GlueConfig = {}

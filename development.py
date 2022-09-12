@@ -25,7 +25,7 @@ class Itada(Stack):
         iam_config = Iam(self, 'Iam').config
 
         # ====== EC2 ======
-        ec2_config = Ec2(self, 'Ec2').config
+        ec2_config = Ec2(self, 'Ec2', iam_config['ec2instance_role']).config
 
         # ====== S3 ======
         s3_config = S3(self, 'S3').config
@@ -55,5 +55,5 @@ class Itada(Stack):
             rs_attr_endpoint_address=redshift_config['attr_endpoint_address'],
             rs_attr_endpoint_port=redshift_config['attr_endpoint_port'],
             rs_db_name=redshift_config['db_name'],
-            gluejob_role_arn=iam_config['gluejob_role_arn']
+            gluejob_role_arn=iam_config['gluejob_role'].role_arn
         )
