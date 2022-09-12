@@ -1,3 +1,4 @@
+import os
 from typing import TypedDict
 from aws_cdk import (
     RemovalPolicy,
@@ -34,7 +35,7 @@ class Ec2(Construct):
             self,
             'ItadaVpc',
             cidr='10.0.0.0/16',
-            max_azs=1
+            max_azs=2
         )
         itada_vpc.apply_removal_policy(RemovalPolicy.DESTROY)
 
@@ -58,10 +59,13 @@ class Ec2(Construct):
             security_group_name='amundsen-alb-sg'
         )
         amundsenalb_sg.apply_removal_policy(RemovalPolicy.DESTROY)
-        amundsenalb_sg.add_ingress_rule(ec2.Peer.any_ipv4(), ec2.Port.tcp(80))
-        amundsenalb_sg.add_ingress_rule(ec2.Peer.any_ipv4(), ec2.Port.tcp(443))
-        amundsenalb_sg.add_ingress_rule(ec2.Peer.any_ipv6(), ec2.Port.tcp(80))
-        amundsenalb_sg.add_ingress_rule(ec2.Peer.any_ipv6(), ec2.Port.tcp(443))
+        amundsenalb_conn = ec2.Connections(
+            security_groups=[amundsenalb_sg]
+        )
+        amundsenalb_conn.allow_from_any_ipv4(port_range=ec2.Port.tcp(80))
+        amundsenalb_conn.allow_from_any_ipv4(port_range=ec2.Port.tcp(443))
+        amundsenalb_conn.allow_from(other=ec2.Peer.any_ipv6(), port_range=ec2.Port.tcp(80))
+        amundsenalb_conn.allow_from(other=ec2.Peer.any_ipv6(), port_range=ec2.Port.tcp(443))
 
         # amundsen-sg
         amundsen_sg = ec2.SecurityGroup(
@@ -73,7 +77,11 @@ class Ec2(Construct):
             security_group_name='amundsen-sg'
         )
         amundsen_sg.apply_removal_policy(RemovalPolicy.DESTROY)
-        amundsen_sg.add_ingress_rule(ec2.Peer.security_group_id(amundsenalb_sg.security_group_id), ec2.Port.tcp(80))
+        amundsen_conn = ec2.Connections(
+            default_port=ec2.Port.tcp(80),
+            security_groups=[amundsen_sg]
+        )
+        amundsen_conn.allow_default_port_from(other=ec2.Peer.security_group_id(amundsenalb_sg.security_group_id))
 
         # chart-service-alb-sg
         chartservicealb_sg = ec2.SecurityGroup(
@@ -85,10 +93,13 @@ class Ec2(Construct):
             security_group_name='chart-service-alb-sg'
         )
         chartservicealb_sg.apply_removal_policy(RemovalPolicy.DESTROY)
-        chartservicealb_sg.add_ingress_rule(ec2.Peer.any_ipv4(), ec2.Port.tcp(80))
-        chartservicealb_sg.add_ingress_rule(ec2.Peer.any_ipv4(), ec2.Port.tcp(443))
-        chartservicealb_sg.add_ingress_rule(ec2.Peer.any_ipv6(), ec2.Port.tcp(80))
-        chartservicealb_sg.add_ingress_rule(ec2.Peer.any_ipv6(), ec2.Port.tcp(443))
+        chartservicealb_conn = ec2.Connections(
+            security_groups=[chartservicealb_sg]
+        )
+        chartservicealb_conn.allow_from_any_ipv4(port_range=ec2.Port.tcp(80))
+        chartservicealb_conn.allow_from_any_ipv4(port_range=ec2.Port.tcp(443))
+        chartservicealb_conn.allow_from(other=ec2.Peer.any_ipv6(), port_range=ec2.Port.tcp(80))
+        chartservicealb_conn.allow_from(other=ec2.Peer.any_ipv6(), port_range=ec2.Port.tcp(443))
 
         # chart-service-sg
         chartservice_sg = ec2.SecurityGroup(
@@ -100,7 +111,11 @@ class Ec2(Construct):
             security_group_name='chart-service-sg'
         )
         chartservice_sg.apply_removal_policy(RemovalPolicy.DESTROY)
-        chartservice_sg.add_ingress_rule(ec2.Peer.security_group_id(chartservicealb_sg.security_group_id), ec2.Port.tcp(8088))
+        chartservice_conn = ec2.Connections(
+            default_port=ec2.Port.tcp(8088),
+            security_groups=[chartservice_sg]
+        )
+        chartservice_conn.allow_default_port_from(other=ec2.Peer.security_group_id(chartservicealb_sg.security_group_id))
 
         # aurora-cluster-sg
         auroracluster_sg = ec2.SecurityGroup(
@@ -112,7 +127,11 @@ class Ec2(Construct):
             security_group_name='aurora-cluster-sg'
         )
         auroracluster_sg.apply_removal_policy(RemovalPolicy.DESTROY)
-        auroracluster_sg.add_ingress_rule(ec2.Peer.security_group_id(itada_vpc.vpc_default_security_group), ec2.Port.tcp(5432))
+        auroracluster_conn = ec2.Connections(
+            default_port=ec2.Port.tcp(5432),
+            security_groups=[auroracluster_sg]
+        )
+        auroracluster_conn.allow_default_port_from(other=ec2.Peer.security_group_id(itada_vpc.vpc_default_security_group))
 
         # redshift-cluster-sg
         redshiftcluster_sg = ec2.SecurityGroup(
@@ -124,9 +143,13 @@ class Ec2(Construct):
             security_group_name='redshift-cluster-sg'
         )
         redshiftcluster_sg.apply_removal_policy(RemovalPolicy.DESTROY)
-        redshiftcluster_sg.add_ingress_rule(ec2.Peer.security_group_id(itada_vpc.vpc_default_security_group), ec2.Port.tcp(5439))
-        redshiftcluster_sg.add_ingress_rule(ec2.Peer.security_group_id(auroracluster_sg.security_group_id), ec2.Port.tcp(5439))
-        redshiftcluster_sg.add_ingress_rule(ec2.Peer.security_group_id(chartservice_sg.security_group_id), ec2.Port.tcp(5439))
+        redshiftcluster_conn = ec2.Connections(
+            default_port=ec2.Port.tcp(5439),
+            security_groups=[redshiftcluster_sg]
+        )
+        redshiftcluster_conn.allow_default_port_from(other=ec2.Peer.security_group_id(itada_vpc.vpc_default_security_group))
+        redshiftcluster_conn.allow_default_port_from(other=ec2.Peer.security_group_id(auroracluster_sg.security_group_id))
+        redshiftcluster_conn.allow_default_port_from(other=ec2.Peer.security_group_id(chartservice_sg.security_group_id))
 
         # glue-sg
         glue_sg = ec2.SecurityGroup(
@@ -138,29 +161,14 @@ class Ec2(Construct):
             security_group_name='glue-sg'
         )
         glue_sg.apply_removal_policy(RemovalPolicy.DESTROY)
-        glue_sg.add_ingress_rule(ec2.Peer.security_group_id(glue_sg.security_group_id), ec2.Port.all_tcp())
-
-        # Instances
-        # Bootstrapwithdocker userdata
-        user_data = ec2.UserData.for_linux()
-        user_data.add_commands(
-            'sudo apt-get update',
-            'sudo apt-get install \
-                ca-certificates \
-                curl \
-                gnupg \
-                lsb-release -y',
-            'sudo mkdir -p /etc/apt/keyrings',
-            'curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg',
-            'echo \
-            "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-            $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null',
-            'sudo apt-get update',
-            'sudo apt-get install docker-ce docker-ce-cli containerd.io docker-compose-plugin -y',
-            'sudo apt-get update',
-            'sudo apt-get install docker-compose-plugin -y'
+        glue_conn = ec2.Connections(
+            security_groups=[glue_sg]
+        )
+        glue_conn.allow_internally(
+            port_range=ec2.Port.all_tcp()
         )
 
+        # Instances
         ebs_volumes = [
             ec2.BlockDevice(
                 device_name="/dev/sda1",
@@ -219,7 +227,6 @@ class Ec2(Construct):
                 key_name=key_props['key_name'],
                 role=ec2instance_role,
                 security_group=amundsen_sg,
-                user_data=user_data,
                 vpc_subnets=ec2.SubnetSelection(
                     subnet_type=ec2.SubnetType.PUBLIC
                 )
