@@ -7,7 +7,7 @@ from constructs import Construct
 
 
 class S3Config(TypedDict):
-    pass
+    itada_cdk_scripts: s3.Bucket
 
 
 class S3(Construct):
@@ -18,11 +18,18 @@ class S3(Construct):
     ):
         super().__init__(scope, id)
 
+        # itada-cdk-scripts
+        itada_cdk_scripts = s3.Bucket.from_bucket_name(
+            self,
+            'ItadaCdkScriptsBucket',
+            bucket_name='itada-cdk-scripts'
+        )
+
         # itada-datasource
         s3.Bucket(
             self,
             'ItadaDatasourceBucket',
-            bucket_name='itada-datasource',
+            bucket_name='itada-datasource-temp',
             removal_policy=RemovalPolicy.DESTROY,
             auto_delete_objects=True
         )
@@ -31,7 +38,7 @@ class S3(Construct):
         s3.Bucket(
             self,
             'MetadataCenterBucket',
-            bucket_name='metadata-center',
+            bucket_name='metadata-center-temp',
             removal_policy=RemovalPolicy.DESTROY,
             auto_delete_objects=True
         )
@@ -40,13 +47,15 @@ class S3(Construct):
         s3.Bucket(
             self,
             'ItadaAthenaQueryResultBucket',
-            bucket_name='itada-athena-query-result',
+            bucket_name='itada-athena-query-result-temp',
             removal_policy=RemovalPolicy.DESTROY,
             auto_delete_objects=True
         )
 
         # Configuration parameters
-        self._config: S3Config = {}
+        self._config: S3Config = {
+            'itada_cdk_scripts': itada_cdk_scripts
+        }
 
     @property
     def config(self) -> S3Config:

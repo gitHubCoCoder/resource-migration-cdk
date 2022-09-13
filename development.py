@@ -1,7 +1,6 @@
-import os
 from dotenv import load_dotenv
 from aws_cdk import (
-    Stack
+    Stack,
 )
 from constructs import Construct
 from iam.infrastructure import Iam
@@ -9,8 +8,9 @@ from ec2.infrastructure import Ec2
 from s3.infrastructure import S3
 from redshift.infrastructure import Redshift
 from aurora.infrastructure import Aurora
+from lambda_.infrastructure import Lambda
 from glue.infrastructure import Glue
-
+ 
 
 load_dotenv()
 
@@ -43,6 +43,16 @@ class Itada(Stack):
             'Aurora',
             vpc=ec2_config['itada_vpc'],
             security_groups=[ec2_config['auroracluster_sg']]
+        )
+
+        # ====== LAMBDA ======
+        lambda_config = Lambda(
+            self,
+            'Lambda',
+            cdk_scripts_bucket=s3_config['itada_cdk_scripts'],
+            lambdafunc_role=iam_config['lambdafunc_role'],
+            security_groups=[ec2_config['default_sg']],
+            vpc=ec2_config['itada_vpc']
         )
 
         # ====== GLUE ======

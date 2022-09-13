@@ -3,7 +3,5 @@
     "ap-southeast-2a",
     "ap-southeast-2b",
     "ap-southeast-2c"
-  ],
-  "ami:account=448648146949:filters.image-type.0=machine:filters.name.0=ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-20220419:filters.state.0=available:region=ap-southeast-2": "ami-0d539270873f66397",
-  "ami:account=448648146949:filters.image-type.0=machine:filters.name.0=ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-20220609:filters.state.0=available:region=ap-southeast-2": "ami-0e040c48614ad1327"
+  ]
 }

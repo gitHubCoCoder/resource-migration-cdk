@@ -9,8 +9,9 @@ from constructs import Construct
 
 class IamConfig(TypedDict):
     account_id: str
-    gluejob_role: iam.Role
     ec2instance_role: iam.Role
+    lambdafunc_role: iam.Role
+    gluejob_role: iam.Role
 
 
 class Iam(Construct):
@@ -22,34 +23,92 @@ class Iam(Construct):
         super().__init__(scope, id)
 
         # Managed policy
-        amazon_sqs_full_access = iam.ManagedPolicy.from_managed_policy_name(
-            self,
-            'AmazonSQSFullAccess',
+        amazon_sqs_full_access = iam.ManagedPolicy.from_aws_managed_policy_name(
             managed_policy_name='AmazonSQSFullAccess'
         )
 
-        amazon_s3_full_access = iam.ManagedPolicy.from_managed_policy_name(
-            self,
-            'AmazonS3FullAccess',
+        amazon_s3_full_access = iam.ManagedPolicy.from_aws_managed_policy_name(
             managed_policy_name='AmazonS3FullAccess'
         )
 
-        aws_glue_service_role = iam.ManagedPolicy.from_managed_policy_name(
-            self,
-            'AWSGlueServiceRole',
-            managed_policy_name='AWSGlueServiceRole'
+        aws_glue_service_role = iam.ManagedPolicy.from_aws_managed_policy_name(
+            managed_policy_name='service-role/AWSGlueServiceRole'
         )
 
-        amazon_sns_full_access = iam.ManagedPolicy.from_managed_policy_name(
-            self,
-            'AmazonSNSFullAccess',
+        amazon_sns_full_access = iam.ManagedPolicy.from_aws_managed_policy_name(
             managed_policy_name='AmazonSNSFullAccess'
         )
 
-        amazon_athena_full_access = iam.ManagedPolicy.from_managed_policy_name(
-            self,
-            'AmazonAthenaFullAccess',
+        amazon_athena_full_access = iam.ManagedPolicy.from_aws_managed_policy_name(
             managed_policy_name='AmazonAthenaFullAccess'
+        )
+
+        secretsmanager_read_write = iam.ManagedPolicy.from_aws_managed_policy_name(
+            managed_policy_name='SecretsManagerReadWrite'
+        )
+
+        cloudwatch_logs_full_access = iam.ManagedPolicy.from_aws_managed_policy_name(
+            managed_policy_name='CloudWatchLogsFullAccess'
+        )
+        
+        amazon_rds_data_full_access = iam.ManagedPolicy.from_aws_managed_policy_name(
+            managed_policy_name='AmazonRDSDataFullAccess'
+        )
+
+        aws_stepfunctions_full_access = iam.ManagedPolicy.from_aws_managed_policy_name(
+            managed_policy_name='AWSStepFunctionsFullAccess'
+        )
+
+        amazon_redshift_data_full_access = iam.ManagedPolicy.from_aws_managed_policy_name(
+            managed_policy_name='AmazonRedshiftDataFullAccess'
+        )
+
+        lambda_invoke = iam.Policy(
+            self,
+            'LambdaInvokePolicy',
+            document=iam.PolicyDocument(
+                assign_sids=True,
+                statements=[
+                    iam.PolicyStatement(
+                        actions=['lambda:InvokeFunction', 'lambda:InvokeAsync'],
+                        effect=iam.Effect.ALLOW,
+                        resources=['*']
+                    )
+                ]
+            ),
+            policy_name='LambdaInvoke'
+        )
+
+        lambda_stop_db = iam.Policy(
+            self,
+            'LambdaStopDbPolicy',
+            document=iam.PolicyDocument(
+                assign_sids=True,
+                statements=[
+                    iam.PolicyStatement(
+                        actions=['rds:StopDBCluster', 'rds:StopDBInstance'],
+                        effect=iam.Effect.ALLOW,
+                        resources=['*']
+                    )
+                ]
+            ),
+            policy_name='LambdaStopDB'
+        )
+
+        lambda_stop_instance = iam.Policy(
+            self,
+            'LambdaStopInstancePolicy',
+            document=iam.PolicyDocument(
+                assign_sids=True,
+                statements=[
+                    iam.PolicyStatement(
+                        actions=['ec2:StopInstances'],
+                        effect=iam.Effect.ALLOW,
+                        resources=['*']
+                    )
+                ]
+            ),
+            policy_name='LambdaStopInstance'
         )
 
         # Role
@@ -63,6 +122,25 @@ class Iam(Construct):
             ]
         )
         ec2instance_role.apply_removal_policy(RemovalPolicy.DESTROY)
+
+        lambdafunc_role = iam.Role(self, 'LambdaFuncRole',
+            assumed_by=iam.ServicePrincipal('lambda.amazonaws.com'),
+            description='Allows Lambda Function to call AWS services on your behalf.',
+            managed_policies=[
+                lambda_invoke,
+                secretsmanager_read_write,
+                amazon_s3_full_access,
+                aws_glue_service_role,
+                cloudwatch_logs_full_access,
+                amazon_rds_data_full_access,
+                amazon_sns_full_access,
+                aws_stepfunctions_full_access,
+                amazon_redshift_data_full_access,
+                lambda_stop_db,
+                lambda_stop_instance
+            ]
+        )
+        lambdafunc_role.apply_removal_policy(RemovalPolicy.DESTROY)
 
         gluejob_role = iam.Role(self, "GlueJobRole",
             assumed_by=iam.ServicePrincipal('glue.amazonaws.com'),
@@ -79,8 +157,9 @@ class Iam(Construct):
         # Configuration parameters
         self._config: IamConfig = {
             'account_id': Fn.ref('AWS::AccountId'),
-            'gluejob_role': gluejob_role,
-            'ec2instance_role': ec2instance_role
+            'ec2instance_role': ec2instance_role,
+            'lambdafunc_role': lambdafunc_role,
+            'gluejob_role': gluejob_role
         }
 
     @property

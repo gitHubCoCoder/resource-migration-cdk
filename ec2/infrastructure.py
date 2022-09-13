@@ -1,3 +1,4 @@
+from email.policy import default
 import os
 from typing import TypedDict
 from aws_cdk import (
@@ -12,6 +13,7 @@ class Ec2Config(TypedDict):
     itada_vpc: ec2.Vpc
     pwn_subnets: ec2.SelectedSubnets
     public_subnets: ec2.SelectedSubnets
+    default_sg: ec2.SecurityGroup
     amundsenalb_sg: ec2.SecurityGroup
     amundsen_sg: ec2.SecurityGroup
     chartservicealb_sg: ec2.SecurityGroup
@@ -49,6 +51,13 @@ class Ec2(Construct):
         )
 
         # Security group
+        # default-sg
+        default_sg = ec2.SecurityGroup.from_security_group_id(
+            self,
+            'DefaultSg',
+            security_group_id=itada_vpc.vpc_default_security_group
+        )
+
         # amundsen-alb-sg
         amundsenalb_sg = ec2.SecurityGroup(
             self,
@@ -186,8 +195,11 @@ class Ec2(Construct):
                     'key_name': 'amundsen_key'
                 },
                 'AmundsenInstance': {
-                    'machine_image': ec2.MachineImage.lookup(
-                        name='ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-20220419'
+                    'machine_image': ec2.MachineImage.generic_linux(
+                        ami_map={
+                            'ap-southeast-1': 'ami-0443cb4c104c2b7ec',
+                            'ap-southeast-2': 'ami-00246527dcee8c2ed'
+                        }
                     )
                 }
             },
@@ -196,8 +208,11 @@ class Ec2(Construct):
                     'key_name': 'chart_service_key'
                 },
                 'ChartServiceInstance': {
-                    'machine_image': ec2.MachineImage.lookup(
-                        name='ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-20220609'
+                    'machine_image': ec2.MachineImage.generic_linux(
+                        ami_map={
+                            'ap-southeast-1': 'ami-03343aa326f22d76c',
+                            'ap-southeast-2': 'ami-02c498b3f4289451e'
+                        }
                     )
                 }
             }
@@ -237,6 +252,7 @@ class Ec2(Construct):
             'itada_vpc': itada_vpc,
             'pwn_subnets': pwn_subnets,
             'public_subnets': public_subnets,
+            'default_sg': default_sg,
             'amundsenalb_sg': amundsenalb_sg,
             'amundsen_sg': amundsen_sg,
             'chartservicealb_sg': chartservicealb_sg,
