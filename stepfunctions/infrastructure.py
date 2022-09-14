@@ -26,7 +26,7 @@ class Stepfunctions(Construct):
                 'function_name': 'csv-upload-state-machine'
             },
             'DevelopItadaStateMachine': {
-                'function_name': 'csv-upload-state-machine'
+                'function_name': 'develop-Itada-state-machine'
             }
         }
 
