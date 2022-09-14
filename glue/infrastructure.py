@@ -104,21 +104,21 @@ class Glue(Construct):
             },
         }
 
-        for conn_id, conn_props in conn_configs.items():
-            glue.CfnConnection(
-                self,
-                conn_id,
-                catalog_id=catalog_id,
-                connection_input=glue.CfnConnection.ConnectionInputProperty(
-                    **conn_props['connection_input'],
-                    connection_type='JDBC',
-                    physical_connection_requirements=glue.CfnConnection.PhysicalConnectionRequirementsProperty(
-                        availability_zone=pwn_subnet.availability_zone,
-                        subnet_id=pwn_subnet.subnet_id,
-                        security_group_id_list=glue_sg_id_list #[ec2_config['glue_sg'].security_group_id],
-                    ),
-                )
-            ).apply_removal_policy(RemovalPolicy.DESTROY)
+        # for conn_id, conn_props in conn_configs.items():
+        #     glue.CfnConnection(
+        #         self,
+        #         conn_id,
+        #         catalog_id=catalog_id,
+        #         connection_input=glue.CfnConnection.ConnectionInputProperty(
+        #             **conn_props['connection_input'],
+        #             connection_type='JDBC',
+        #             physical_connection_requirements=glue.CfnConnection.PhysicalConnectionRequirementsProperty(
+        #                 availability_zone=pwn_subnet.availability_zone,
+        #                 subnet_id=pwn_subnet.subnet_id,
+        #                 security_group_id_list=glue_sg_id_list #[ec2_config['glue_sg'].security_group_id],
+        #             ),
+        #         )
+        #     ).apply_removal_policy(RemovalPolicy.DESTROY)
 
         # Job
         # work_db shared arguments

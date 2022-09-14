@@ -12,6 +12,7 @@ class IamConfig(TypedDict):
     ec2instance_role: iam.Role
     lambdafunc_role: iam.Role
     gluejob_role: iam.Role
+    stepfunction_role: iam.Role
 
 
 class Iam(Construct):
@@ -61,6 +62,22 @@ class Iam(Construct):
 
         amazon_redshift_data_full_access = iam.ManagedPolicy.from_aws_managed_policy_name(
             managed_policy_name='AmazonRedshiftDataFullAccess'
+        )
+
+        cloudwatch_full_access = iam.ManagedPolicy.from_aws_managed_policy_name(
+            managed_policy_name='CloudWatchFullAccess'
+        )
+
+        aws_glue_service_notebook_role = iam.ManagedPolicy.from_aws_managed_policy_name(
+            managed_policy_name='service-role/AWSGlueServiceNotebookRole'
+        )
+
+        aws_glue_console_sagemaker_notebook_full_access = iam.ManagedPolicy.from_aws_managed_policy_name(
+            managed_policy_name='AWSGlueConsoleSageMakerNotebookFullAccess'
+        )
+
+        aws_lambda_role = iam.ManagedPolicy.from_aws_managed_policy_name(
+            managed_policy_name='service-role/AWSLambdaRole'
         )
 
         lambda_invoke = iam.Policy(
@@ -154,12 +171,26 @@ class Iam(Construct):
         )
         gluejob_role.apply_removal_policy(RemovalPolicy.DESTROY)
 
+        stepfunction_role = iam.Role(self, "StepFunctionRole",
+            assumed_by=iam.ServicePrincipal('states.amazonaws.com'),
+            description='Allows Step Function to call AWS services on your behalf.',
+            managed_policies=[
+                cloudwatch_full_access,
+                aws_glue_service_notebook_role,
+                aws_glue_service_role,
+                aws_glue_console_sagemaker_notebook_full_access,
+                aws_lambda_role
+            ]
+        )
+        stepfunction_role.apply_removal_policy(RemovalPolicy.DESTROY)
+
         # Configuration parameters
         self._config: IamConfig = {
             'account_id': Fn.ref('AWS::AccountId'),
             'ec2instance_role': ec2instance_role,
             'lambdafunc_role': lambdafunc_role,
-            'gluejob_role': gluejob_role
+            'gluejob_role': gluejob_role,
+            'stepfunction_role': stepfunction_role
         }
 
     @property

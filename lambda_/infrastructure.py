@@ -21,7 +21,7 @@ class Lambda(Construct):
         scope: Construct,
         id: str,
         *,
-        cdk_scripts_bucket: s3.Bucket,
+        cdkscripts_bucket: s3.Bucket,
         lambdafunc_role: iam.Role,
         security_groups: List[ec2.SecurityGroup],
         vpc: ec2.Vpc
@@ -84,7 +84,7 @@ class Lambda(Construct):
                 self,
                 lambda_func_id,
                 code=lambda_.Code.from_bucket(
-                    bucket=cdk_scripts_bucket,
+                    bucket=cdkscripts_bucket,
                     key=f'lambda_funcs/{lambda_func_props["function_name"]}.py'
                 ),
                 handler='lambda_function.lambda_handler',

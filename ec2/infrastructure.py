@@ -21,6 +21,8 @@ class Ec2Config(TypedDict):
     auroracluster_sg: ec2.SecurityGroup
     redshiftcluster_sg: ec2.SecurityGroup
     glue_sg: ec2.SecurityGroup
+    amundsen_instance: ec2.Instance
+    chartservice_instance: ec2.Instance
 
 
 class Ec2(Construct):
@@ -218,6 +220,8 @@ class Ec2(Construct):
             }
         }
 
+        returned_instance_dict = {}
+
         for instance_name, props in instance_configs.items():
             key_props = props[instance_name + 'Key']
             instance_props = props[instance_name + 'Instance']
@@ -229,7 +233,7 @@ class Ec2(Construct):
                 key_type='rsa'
             )
 
-            ec2.Instance(
+            returned_instance_dict[instance_name] = ec2.Instance(
                 self,
                 instance_name + 'Instance',
                 vpc=itada_vpc,
@@ -259,7 +263,9 @@ class Ec2(Construct):
             'chartservice_sg': chartservice_sg,
             'auroracluster_sg': auroracluster_sg,
             'redshiftcluster_sg': redshiftcluster_sg,
-            'glue_sg': glue_sg
+            'glue_sg': glue_sg,
+            'amundsen_instance': returned_instance_dict['Amundsen'],
+            'chartservice_instance': returned_instance_dict['ChartService']
         }
 
     @property
